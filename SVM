@@ -1,5 +1,5 @@
-import numpy as np
 import pandas as pd
+import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
@@ -8,69 +8,62 @@ from sklearn.metrics import (
     matthews_corrcoef, 
     average_precision_score, 
     recall_score, 
-    classification_report,
-    confusion_matrix
+    classification_report
 )
 
-def evaluate_performance(y_true, y_pred, y_probs, model_name):
-    """
-    Standardized evaluation for EC503 Project Metrics.
-    Focuses on Sensitivity (Recall), MCC, and AUPRC.
-    """
-    mcc = matthews_corrcoef(y_true, y_pred)
-    auprc = average_precision_score(y_true, y_probs)
-    sensitivity = recall_score(y_true, y_pred)
+def load_and_preprocess(filepath):
+    """Loads the cleaned CSVs and applies standard scaling."""
+    df = pd.read_csv(filepath)
+    X = df.drop('target', axis=1)
+    y = df['target']
     
-    print(f"\n{'='*10} {model_name} {'='*10}")
-    print(f"Sensitivity (Recall): {sensitivity:.4f}")
-    print(f"MCC:                  {mcc:.4f}")
-    print(f"AUPRC:                {auprc:.4f}")
-    print("\nDetailed Classification Report:")
-    print(classification_report(y_true, y_pred))
-    return {"mcc": mcc, "auprc": auprc, "sensitivity": sensitivity}
-
-def main():
-    # 1. Load Data (Using Breast Cancer as an example placeholder)
-    # Replace this with your SPECT Heart or Wisconsin data loading logic
-    from sklearn.datasets import load_breast_cancer
-    data = load_breast_cancer()
-    X, y = data.data, data.target
-    
-    # Invert labels if necessary to ensure 1 is the 'Minority/Positive' class
-    # For many UCI datasets, you'll need to confirm which class is the minority.
-    
-    # 2. Split and Scale (Crucial for SVM performance)
+    # Stratified split ensures minority class is represented in both sets
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.3, random_state=42, stratify=y
     )
     
     scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+    
+    return X_train, X_test, y_train, y_test
 
-    # 3. Baseline 1: Logistic Regression (Standard)
-    # Similar to HW1/2 logic
+def evaluate_model(model, X_test, y_test, model_name):
+    """Calculates the specific metrics required for the EC503 project."""
+    preds = model.predict(X_test)
+    # probability=True is needed for SVC to get scores for AUPRC
+    probs = model.predict_proba(X_test)[:, 1] 
+    
+    mcc = matthews_corrcoef(y_test, preds)
+    auprc = average_precision_score(y_test, probs)
+    sensitivity = recall_score(y_test, preds)
+    
+    print(f"\n--- Results for {model_name} ---")
+    print(f"Sensitivity (Recall): {sensitivity:.4f}")
+    print(f"MCC:                  {mcc:.4f}")
+    print(f"AUPRC:                {auprc:.4f}")
+    return {"mcc": mcc, "auprc": auprc, "recall": sensitivity}
+
+def run_baselines(dataset_path, dataset_name):
+    print(f"\n{'='*20} DATASET: {dataset_name} {'='*20}")
+    X_train, X_test, y_train, y_test = load_and_preprocess(dataset_path)
+
+    # 1. Logistic Regression Baseline
     lr = LogisticRegression(max_iter=1000)
-    lr.fit(X_train_scaled, y_train)
-    lr_preds = lr.predict(X_test_scaled)
-    lr_probs = lr.predict_proba(X_test_scaled)[:, 1]
-    evaluate_performance(y_test, lr_preds, lr_probs, "Logistic Regression Baseline")
+    lr.fit(X_train, y_train)
+    evaluate_model(lr, X_test, y_test, "Logistic Regression")
 
-    # 4. Baseline 2: Standalone SVM (Standard)
-    # Similar to HW4 logic
+    # 2. Standard SVM Baseline
     svm_std = SVC(kernel='rbf', probability=True)
-    svm_std.fit(X_train_scaled, y_train)
-    svm_preds = svm_std.predict(X_test_scaled)
-    svm_probs = svm_std.predict_proba(X_test_scaled)[:, 1]
-    evaluate_performance(y_test, svm_preds, svm_probs, "Standard SVM Baseline")
+    svm_std.fit(X_train, y_train)
+    evaluate_model(svm_std, X_test, y_test, "Standard SVM")
 
-    # 5. Baseline 3: Cost-Sensitive SVM (Project Goal)
-    # Manipulating class weights to handle imbalance
-    svm_weighted = SVC(kernel='rbf', class_weight='balanced', probability=True)
-    svm_weighted.fit(X_train_scaled, y_train)
-    weight_preds = svm_weighted.predict(X_test_scaled)
-    weight_probs = svm_weighted.predict_proba(X_test_scaled)[:, 1]
-    evaluate_performance(y_test, weight_preds, weight_probs, "Cost-Sensitive SVM")
+    # 3. Cost-Sensitive SVM (The 'Improved' Baseline)
+    svm_cost = SVC(kernel='rbf', class_weight='balanced', probability=True)
+    svm_cost.fit(X_train, y_train)
+    evaluate_model(svm_cost, X_test, y_test, "Cost-Sensitive SVM")
 
 if __name__ == "__main__":
-    main()
+    # Ensure these CSV files are in the same folder as this script
+    run_baselines('breast_cancer_clean.csv', "Breast Cancer Wisconsin")
+    run_baselines('spect_heart_clean.csv', "SPECT Heart")
