@@ -1,40 +1,76 @@
+import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
-from sklearn.ensemble import BaggingClassifier
-from sklearn.metrics import classification_report, matthews_corrcoef, average_precision_score
-from imblearn.over_sampling import SMOTE
-from imblearn.pipeline import Pipeline
+from sklearn.metrics import (
+    matthews_corrcoef, 
+    average_precision_score, 
+    recall_score, 
+    classification_report,
+    confusion_matrix
+)
 
-# 1. Load your UCI Dataset (e.g., Breast Cancer or SPECT Heart)
-# df = pd.read_csv('data/breast_cancer.csv')
-# X = df.drop('target', axis=1)
-# y = df['target']
-
-# 2. Setup the Pipeline
-# We use a pipeline to ensure SMOTE is only applied to training data during CV
-def build_ensemble_model():
-    # Base SVM with Cost-Sensitive Learning (class_weight='balanced')
-    base_svm = SVC(kernel='rbf', probability=True, class_weight='balanced')
+def evaluate_performance(y_true, y_pred, y_probs, model_name):
+    """
+    Standardized evaluation for EC503 Project Metrics.
+    Focuses on Sensitivity (Recall), MCC, and AUPRC.
+    """
+    mcc = matthews_corrcoef(y_true, y_pred)
+    auprc = average_precision_score(y_true, y_probs)
+    sensitivity = recall_score(y_true, y_pred)
     
-    # Ensemble: Bagging with the SVMs
-    ensemble = BaggingClassifier(base_estimator=base_svm, n_estimators=10, random_state=42)
-    
-    # Integration with SMOTE
-    model = Pipeline([
-        ('smt', SMOTE(random_state=42)),
-        ('clf', ensemble)
-    ])
-    return model
+    print(f"\n{'='*10} {model_name} {'='*10}")
+    print(f"Sensitivity (Recall): {sensitivity:.4f}")
+    print(f"MCC:                  {mcc:.4f}")
+    print(f"AUPRC:                {auprc:.4f}")
+    print("\nDetailed Classification Report:")
+    print(classification_report(y_true, y_pred))
+    return {"mcc": mcc, "auprc": auprc, "sensitivity": sensitivity}
 
-# 3. Evaluation Function
-def evaluate_model(model, X_test, y_test, name):
-    preds = model.predict(X_test)
-    probs = model.predict_proba(X_test)[:, 1]
+def main():
+    # 1. Load Data (Using Breast Cancer as an example placeholder)
+    # Replace this with your SPECT Heart or Wisconsin data loading logic
+    from sklearn.datasets import load_breast_cancer
+    data = load_breast_cancer()
+    X, y = data.data, data.target
     
-    print(f"--- {name} Results ---")
-    print(f"MCC: {matthews_corrcoef(y_test, preds):.4f}")
-    print(f"AUPRC: {average_precision_score(y_test, probs):.4f}")
-    print(classification_report(y_test, preds))
+    # Invert labels if necessary to ensure 1 is the 'Minority/Positive' class
+    # For many UCI datasets, you'll need to confirm which class is the minority.
+    
+    # 2. Split and Scale (Crucial for SVM performance)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.3, random_state=42, stratify=y
+    )
+    
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
 
-# Run the comparison logic here...
+    # 3. Baseline 1: Logistic Regression (Standard)
+    # Similar to HW1/2 logic
+    lr = LogisticRegression(max_iter=1000)
+    lr.fit(X_train_scaled, y_train)
+    lr_preds = lr.predict(X_test_scaled)
+    lr_probs = lr.predict_proba(X_test_scaled)[:, 1]
+    evaluate_performance(y_test, lr_preds, lr_probs, "Logistic Regression Baseline")
+
+    # 4. Baseline 2: Standalone SVM (Standard)
+    # Similar to HW4 logic
+    svm_std = SVC(kernel='rbf', probability=True)
+    svm_std.fit(X_train_scaled, y_train)
+    svm_preds = svm_std.predict(X_test_scaled)
+    svm_probs = svm_std.predict_proba(X_test_scaled)[:, 1]
+    evaluate_performance(y_test, svm_preds, svm_probs, "Standard SVM Baseline")
+
+    # 5. Baseline 3: Cost-Sensitive SVM (Project Goal)
+    # Manipulating class weights to handle imbalance
+    svm_weighted = SVC(kernel='rbf', class_weight='balanced', probability=True)
+    svm_weighted.fit(X_train_scaled, y_train)
+    weight_preds = svm_weighted.predict(X_test_scaled)
+    weight_probs = svm_weighted.predict_proba(X_test_scaled)[:, 1]
+    evaluate_performance(y_test, weight_preds, weight_probs, "Cost-Sensitive SVM")
+
+if __name__ == "__main__":
+    main()
