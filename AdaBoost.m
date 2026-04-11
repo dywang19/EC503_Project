@@ -16,6 +16,7 @@ Y_test = testData(:, 1);
 clear; clc;
 Data = readmatrix('breast-cancer-wisconsin.data', 'FileType', 'text');
 y = Data(:,end);
+X = Data(:,2:end-1);
 
 % split data 80/20 train/test, keep class ratio
 cv = cvpartition(y, 'Holdout', 0.2);
@@ -29,34 +30,34 @@ Y_train = y(idxTrain);
 X_test = X(idxTest, :);
 Y_test = y(idxTest);
 
-%% 2. Define the AdaBoost Model
-% 'AdaBoostM1' is the standard algorithm for binary classification.
-% 'NumLearningCycles' is the number of weak learners (trees).
-% 'Learners', 'Tree' uses decision stumps by default for boosting.
+%% Run
+% model setup
 numTrees = 50; 
-t = templateTree('MaxNumSplits', 1); % Decision Stumps work best with AdaBoost
+t = templateTree('MaxNumSplits', 1);
 
-adaModel = fitcensemble(X_train, Y_train, ...
-    'Method', 'AdaBoostM1', ...
-    'NumLearningCycles', numTrees, ...
-    'Learners', t, ...
-    'LearnRate', 0.1); % Lower learning rate can prevent overfitting
+% AdaBoostM1 for binary classification, decision stumps
+adaModel = fitcensemble(X_train, Y_train, 'Method', 'AdaBoostM1', 'NumLearningCycles', numTrees,'Learners', t,'LearnRate', 0.1);
 
-%% 3. Predict and Evaluate
+% training predictions
+Y_train_pred = predict(adaModel, X_train);
+% training accuracy
+trainAccuracy = sum(Y_train_pred == Y_train) / length(Y_train) * 100;
+fprintf('AdaBoost Training Accuracy: %.2f%%\n', trainAccuracy);
+
+% test predictions
 [predictions, scores] = predict(adaModel, X_test);
-
-% Calculate Accuracy
+% test accuracy
 accuracy = sum(predictions == Y_test) / length(Y_test) * 100;
 fprintf('AdaBoost Accuracy: %.2f%%\n', accuracy);
 
-%% 4. Visualization: Confusion Matrix
+% confusion matrix
 figure;
-confusionchart(Y_test, predictions, ...
-    'Title', 'SPECT Heart Diagnosis - AdaBoost Confusion Matrix', ...
-    'ColumnSummary', 'column-normalized', ...
-    'RowSummary', 'row-normalized');
+confusionchart(Y_test, predictions);
+title('Breast Cancer Wisconsin AdaBoost Confusion Matrix');
+xlabel('Predicted Labels');
+ylabel('True Labels');
 
-%% 5. Analyze Error over Iterations
+% 
 figure;
 plot(loss(adaModel, X_test, Y_test, 'Mode', 'cumulative'));
 xlabel('Number of Trees');

@@ -16,6 +16,7 @@ Y_test = testData(:, 1);
 clear; clc;
 Data = readmatrix('breast-cancer-wisconsin.data', 'FileType', 'text');
 y = Data(:,end);
+X = Data(:,2:end-1);
 
 % split data 80/20 train/test, keep class ratio
 cv = cvpartition(y, 'Holdout', 0.2);
@@ -29,28 +30,31 @@ Y_train = y(idxTrain);
 X_test = X(idxTest, :);
 Y_test = y(idxTest);
 
-%% 2. Define the Base Learner (Decision Tree)
-% Bagging works best with deep, unpruned trees to maximize diversity.
+%% Run
+% set up model
 t = templateTree('MaxNumSplits', size(X_train, 1) - 1);
 
-%% 3. Train the Bagging Ensemble
-% 'Method', 'Bag' creates the bootstrap samples and aggregates them.
-numTrees = 100; % Common starting point for bagging
-bagModel = fitcensemble(X_train, Y_train, ...
-    'Method', 'Bag', ...
-    'NumLearningCycles', numTrees, ...
-    'Learners', t);
+numTrees = 100;
+bagModel = fitcensemble(X_train,Y_train,'Method','Bag','NumLearningCycles',numTrees,'Learners', t);
 
-%% 4. Predict and Evaluate
+% training predictions
+Y_train_pred = predict(bagModel, X_train);
+% training accuracy
+trainAccuracy = sum(Y_train_pred == Y_train) / length(Y_train) * 100;
+fprintf('Bagging Training Accuracy: %.2f%%\n', trainAccuracy);
+
+% test predictions
 Y_pred = predict(bagModel, X_test);
-
-% Calculate Accuracy
+% test accuracy
 accuracy = sum(Y_pred == Y_test) / length(Y_test) * 100;
-fprintf('Bagging Accuracy on SPECT Test Set: %.2f%%\n', accuracy);
+fprintf('Bagging Accuracy: %.2f%%\n', accuracy);
 
-%% 5. Visualize Results
+% confusion matrix
 figure;
-confusionchart(Y_test, Y_pred, 'Title', 'Confusion Matrix: Bagging on SPECT');
+confusionchart(Y_test, Y_pred);
+title('Breast Cancer Wisconsin Bagging Confusion Matrix');
+xlabel('Predicted Labels');
+ylabel('True Labels');
 
 % Plot Out-of-Bag (OOB) Error to check convergence
 oobError = oobLoss(bagModel, 'Mode', 'cumulative');
