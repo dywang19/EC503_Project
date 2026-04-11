@@ -1,0 +1,109 @@
+clear; clc; close all;
+
+%% 1. Configuration & Dataset Selection
+% CHANGE THIS TO 'WDBC' or 'SPECT' TO FILL YOUR TABLE
+dataset_choice = 'SPECT'; 
+
+if strcmp(dataset_choice, 'WDBC')
+    data_path = 'WDBC_Data/wdbc.data';
+    if ~isfile(data_path), error('WDBC file not found in WDBC_Data folder.'); end
+    
+    raw_table = readtable(data_path, 'FileType', 'text');
+    X = table2array(raw_table(:, 3:end));
+    labels = table2array(raw_table(:, 2));
+    y = double(strcmp(labels, 'M')); % Malignant = 1, Benign = 0
+    
+    rng(42);
+    idx = randperm(size(X, 1));
+    split_point = floor(0.7 * size(X, 1));
+    X_train_raw = X(idx(1:split_point), :);
+    y_train = y(idx(1:split_point));
+    X_test_raw = X(idx(split_point+1:end), :);
+    y_test = y(idx(split_point+1:end));
+    
+elseif strcmp(dataset_choice, 'SPECT')
+    train_path = 'SPECT_Data/SPECT.train';
+    test_path = 'SPECT_Data/SPECT.test';
+    if ~isfile(train_path), error('SPECT files not found in SPECT_Data folder.'); end
+    
+    % Use 'FileType', 'text' to handle .train and .test extensions
+    train_data = readmatrix(train_path, 'FileType', 'text');
+    test_data = readmatrix(test_path, 'FileType', 'text');
+    
+    y_train = train_data(:, 1);
+    X_train_raw = train_data(:, 2:end);
+    y_test = test_data(:, 1);
+    X_test_raw = test_data(:, 2:end);
+end
+
+%% 2. Preprocessing
+mu = mean(X_train_raw);
+sig = std(X_train_raw);
+sig(sig == 0) = 1; 
+
+X_train = (X_train_raw - mu) ./ sig;
+X_test = (X_test_raw - mu) ./ sig;
+
+%% 3. Manual Logistic Regression
+X_train_b = [ones(size(X_train, 1), 1), X_train];
+X_test_b = [ones(size(X_test, 1), 1), X_test];
+theta_lr = zeros(size(X_train_b, 2), 1);
+alpha_lr = 0.1;
+
+for i = 1:1000
+    h = 1 ./ (1 + exp(-X_train_b * theta_lr));
+    grad = (X_train_b' * (h - y_train)) / length(y_train);
+    theta_lr = theta_lr - alpha_lr * grad;
+end
+
+probs_lr = 1 ./ (1 + exp(-X_test_b * theta_lr));
+preds_lr = probs_lr >= 0.5;
+
+%% 4. Manual Linear SVM (SGD)
+y_train_svm = y_train; y_train_svm(y_train_svm == 0) = -1;
+y_test_svm = y_test;   y_test_svm(y_test_svm == 0) = -1;
+
+[m, n] = size(X_train);
+w = zeros(n, 1);
+b = 0;
+alpha_svm = 0.001;
+C = 1.0; 
+
+for epoch = 1:1000
+    for i = 1:m
+        if y_train_svm(i) * (X_train(i, :) * w + b) < 1
+            w = w - alpha_svm * ( (1/1000)*w - C * y_train_svm(i) * X_train(i, :)' );
+            b = b - alpha_svm * ( -C * y_train_svm(i) );
+        else
+            w = w - alpha_svm * ( (1/1000)*w );
+        end
+    end
+end
+
+preds_svm_raw = X_test * w + b;
+preds_svm = (preds_svm_raw >= 0); 
+
+%% 5. Results Table Generation
+[acc_lr, mcc_lr] = calculate_metrics(y_test, preds_lr);
+[acc_svm, mcc_svm] = calculate_metrics(y_test, preds_svm);
+
+fprintf('\n========================================\n');
+fprintf('   FINAL RESULTS FOR %s\n', dataset_choice);
+fprintf('========================================\n');
+fprintf('Logistic Regression Accuracy: %.2f%%\n', acc_lr);
+fprintf('Linear SVM Accuracy:          %.2f%%\n', acc_svm);
+fprintf('----------------------------------------\n');
+fprintf('LR MCC: %.4f | SVM MCC: %.4f\n', mcc_lr, mcc_svm);
+fprintf('========================================\n');
+
+function [accuracy, mcc] = calculate_metrics(actual, predicted)
+    tp = sum((actual == 1) & (predicted == 1));
+    tn = sum((actual == 0) & (predicted == 0));
+    fp = sum((actual == 0) & (predicted == 1));
+    fn = sum((actual == 1) & (predicted == 0));
+    
+    accuracy = (tp + tn) / length(actual) * 100;
+    num = (double(tp) * tn) - (double(fp) * fn);
+    den = sqrt(double(tp + fp) * (tp + fn) * (tn + fp) * (tn + fn));
+    if den == 0, mcc = 0; else, mcc = num / den; end
+end
