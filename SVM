@@ -1,0 +1,91 @@
+%% EC503 Project: SVM Baseline Implementation
+% Team: Dakota Wang & William Blomerth
+clear; clc; close all;
+
+%% 1. Data Loading
+data_path = '/Users/dakotawang/Downloads/breast+cancer+wisconsin+diagnostic 2/wdbc.data';
+
+try
+    raw_table = readtable(data_path, 'FileType', 'text');
+    X = table2array(raw_table(:, 3:end));
+    labels = table2array(raw_table(:, 2));
+    
+    % SVM Convention: Use -1 and 1 for classes instead of 0 and 1
+    y = ones(size(labels));
+    y(strcmp(labels, 'B')) = -1; 
+    
+    fprintf('Loaded WDBC dataset: %d samples.\n', size(X, 1));
+catch
+    error('File not found at specified path.');
+end
+
+%% 2. Preprocessing & Split
+rng(42); 
+idx = randperm(size(X, 1));
+split_point = floor(0.7 * size(X, 1));
+
+X_train_raw = X(idx(1:split_point), :);
+y_train = y(idx(1:split_point));
+X_test_raw = X(idx(split_point+1:end), :);
+y_test = y(idx(split_point+1:end));
+
+% Proper Normalization (Training params applied to Test)
+mu = mean(X_train_raw);
+sig = std(X_train_raw);
+X_train = (X_train_raw - mu) ./ sig;
+X_test = (X_test_raw - mu) ./ sig;
+
+%% 3. Linear SVM via Hinge Loss Gradient Descent
+[m, n] = size(X_train);
+w = zeros(n, 1);
+b = 0;
+learning_rate = 0.001;
+C = 1.0; % Regularization parameter
+epochs = 1000;
+
+for epoch = 1:epochs
+    for i = 1:m
+        % Check the Margin Condition: y(wx + b) >= 1
+        condition = y_train(i) * (X_train(i, :) * w + b) >= 1;
+        
+        if condition
+            % Only regularization gradient
+            w = w - learning_rate * ( (1/epochs) * w );
+        else
+            % Miss or inside margin: add loss gradient
+            w = w - learning_rate * ( (1/epochs) * w - C * y_train(i) * X_train(i, :)' );
+            b = b - learning_rate * ( -C * y_train(i) );
+        end
+    end
+end
+
+% Predict
+% sign(wx + b) gives -1 or 1
+scores_svm = X_test * w + b;
+preds_svm = sign(scores_svm);
+
+%% 4. Statistical Evaluation
+% Convert back to 0/1 for the metric function
+y_test_01 = (y_test == 1);
+preds_svm_01 = (preds_svm == 1);
+
+[mcc_svm, rec_svm] = calculate_metrics_base(y_test_01, preds_svm_01);
+
+fprintf('\n========================================\n');
+fprintf('        MANUAL LINEAR SVM RESULTS       \n');
+fprintf('========================================\n');
+fprintf('  Recall (Sens): %.4f\n', rec_svm);
+fprintf('  MCC:           %.4f\n', mcc_svm);
+fprintf('========================================\n');
+
+function [mcc, recall] = calculate_metrics_base(actual, predicted)
+    tp = sum((actual == 1) & (predicted == 1));
+    tn = sum((actual == 0) & (predicted == 0));
+    fp = sum((actual == 0) & (predicted == 1));
+    fn = sum((actual == 1) & (predicted == 0));
+    
+    recall = tp / (tp + fn);
+    num = (double(tp) * tn) - (double(fp) * fn);
+    den = sqrt(double(tp + fp) * (tp + fn) * (tn + fp) * (tn + fn));
+    if den == 0, mcc = 0; else, mcc = num / den; end
+end
