@@ -1,33 +1,32 @@
-%% --- LINEAR SVM: SPECT DATASET ---
-% 1. Load SPECT files (Same as above)
+%% --- UPDATED LINEAR SVM: SPECT (MINORITY = 1) ---
+% 1. Load and Flip Labels
 spect_train = readtable('/Users/dakotawang/Downloads/spect+heart (1) 2/SPECT.train', 'FileType', 'text');
 spect_test  = readtable('/Users/dakotawang/Downloads/spect+heart (1) 2/SPECT.test', 'FileType', 'text');
 
-X_train = table2array(spect_train(:, 2:end)); Y_train = table2array(spect_train(:, 1));
-X_test  = table2array(spect_test(:, 2:end));  Y_test  = table2array(spect_test(:, 1));
+Y_train = (table2array(spect_train(:, 1)) == 0); 
+Y_test  = (table2array(spect_test(:, 1)) == 0);
+X_train = table2array(spect_train(:, 2:end)); 
+X_test  = table2array(spect_test(:, 2:end));
 
 % 2. Normalize
 X_train_s = (X_train - mean(X_train)) ./ (std(X_train) + 1e-6);
 X_test_s = (X_test - mean(X_test)) ./ (std(X_test) + 1e-6);
 
-% 3. "One-Shot" SVM Solver (Normal Equation)
+% 3. One-Shot Solver
 Y_svm = double(Y_train); Y_svm(Y_svm == 0) = -1;
 X_train_b = [ones(size(X_train_s,1),1) X_train_s];
-
-% Direct linear algebra solver for the SVM boundary
 w = (X_train_b' * X_train_b + 0.5 * eye(size(X_train_b,2))) \ (X_train_b' * Y_svm);
 
 % 4. Test & Metrics
 X_test_b = [ones(size(X_test_s,1),1) X_test_s];
 pred = (X_test_b * w) >= 0;
 
-% Final Report Card
 tp = sum(pred == 1 & Y_test == 1); tn = sum(pred == 0 & Y_test == 0);
 fp = sum(pred == 1 & Y_test == 0); fn = sum(pred == 0 & Y_test == 1);
 acc = (tp + tn) / length(Y_test);
-f1_min = (2*tp) / (2*tp + fp + fn); f1_maj = (2*tn) / (2*tn + fp + fn);
-macro_f1 = (f1_min + f1_maj) / 2;
+f1_min = (2*tp) / (2*tp + fp + fn + 1e-6);
+f1_maj = (2*tn) / (2*tn + fp + fn + 1e-6);
 
-fprintf('\n--- SPECT Linear SVM Results ---\n');
-fprintf('Accuracy: %.3f | F1-Minority: %.3f | F1-Majority: %.3f | Macro-F1: %.3f | FN: %d\n', ...
-        acc, f1_min, f1_maj, macro_f1, fn);
+fprintf('\n--- Updated SPECT Linear SVM ---\n');
+fprintf('Accuracy: %.3f | F1-Sick (Min): %.3f | F1-Healthy (Maj): %.3f | Macro-F1: %.3f | FN: %d\n', ...
+        acc, f1_min, f1_maj, (f1_min+f1_maj)/2, fn);
