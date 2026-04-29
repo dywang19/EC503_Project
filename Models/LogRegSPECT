@@ -1,50 +1,42 @@
-%% --- LOGISTIC REGRESSION: SPECT DATASET ---
+%% --- UPDATED LOGISTIC REGRESSION: SPECT (MINORITY = 1) ---
 % 1. Load SPECT files
 spect_train = readtable('/Users/dakotawang/Downloads/spect+heart (1) 2/SPECT.train', 'FileType', 'text');
 spect_test  = readtable('/Users/dakotawang/Downloads/spect+heart (1) 2/SPECT.test', 'FileType', 'text');
 
-% Column 1 is Diagnosis (0 or 1), Columns 2-23 are the binary features
+% FLIP LOGIC: If 0 was the minority, we make it the positive class (1)
+Y_train_raw = table2array(spect_train(:, 1));
+Y_test_raw  = table2array(spect_test(:, 1));
+Y_train = (Y_train_raw == 0); % Now the original '0' is our '1'
+Y_test  = (Y_test_raw == 0);
+
 X_train = table2array(spect_train(:, 2:end)); 
-Y_train = table2array(spect_train(:, 1)); 
-X_test  = table2array(spect_test(:, 2:end));  
-Y_test  = table2array(spect_test(:, 1));
+X_test  = table2array(spect_test(:, 2:end));
 
-% 2. Manual Normalization (Z-score)
+% 2. Normalize & Train
 manual_z = @(data) (data - mean(data)) ./ (std(data) + 1e-6);
-X_train_s = manual_z(X_train);
-X_test_s = manual_z(X_test);
-
-% 3. Train Logistic Regression using Gradient Descent
-X_train_b = [ones(size(X_train_s,1),1) X_train_s]; % Add Bias
-[N, D] = size(X_train_b);
-w = zeros(D, 1);
+X_train_s = manual_z(X_train); X_test_s = manual_z(X_test);
+X_train_b = [ones(size(X_train_s,1),1) X_train_s];
+w = zeros(size(X_train_b,2), 1);
 lr = 0.1;
-epochs = 2000;
 
-for i = 1:epochs
-    % Sigmoid function
+for i = 1:2000
     h = 1 ./ (1 + exp(-(X_train_b * w)));
-    % Gradient update
-    w = w - (lr/N) * (X_train_b' * (h - Y_train));
+    w = w - (lr/length(Y_train)) * (X_train_b' * (h - Y_train));
 end
 
-% 4. Test and Metrics
+% 3. Test & Metrics
 X_test_b = [ones(size(X_test_s,1),1) X_test_s];
-% Calculate probabilities and convert to binary predictions (threshold = 0.5)
-probs = 1 ./ (1 + exp(-(X_test_b * w)));
-pred = probs >= 0.5;
+pred = (1 ./ (1 + exp(-(X_test_b * w)))) >= 0.5;
 
-% 5. Final Report Card
-tp = sum(pred == 1 & Y_test == 1); 
-tn = sum(pred == 0 & Y_test == 0);
-fp = sum(pred == 1 & Y_test == 0); 
-fn = sum(pred == 0 & Y_test == 1);
+calculate_final_metrics(Y_test, pred, 'Updated SPECT LogReg');
 
-acc = (tp + tn) / length(Y_test);
-f1_min = (2 * tp) / (2 * tp + fp + fn); 
-f1_maj = (2 * tn) / (2 * tn + fp + fn);
-macro_f1 = (f1_min + f1_maj) / 2;
-
-fprintf('\n--- SPECT Logistic Regression Results ---\n');
-fprintf('Accuracy: %.3f | F1-Minority: %.3f | F1-Majority: %.3f | Macro-F1: %.3f | FN: %d\n', ...
-        acc, f1_min, f1_maj, macro_f1, fn);
+function calculate_final_metrics(y_true, y_pred, name)
+    tp = sum(y_pred == 1 & y_true == 1); tn = sum(y_pred == 0 & y_true == 0);
+    fp = sum(y_pred == 1 & y_true == 0); fn = sum(y_pred == 0 & y_true == 1);
+    acc = (tp + tn) / length(y_true);
+    f1_min = (2*tp) / (2*tp + fp + fn + 1e-6); 
+    f1_maj = (2*tn) / (2*tn + fp + fn + 1e-6);
+    fprintf('\n--- %s ---\n', name);
+    fprintf('Accuracy: %.3f | F1-Sick (Min): %.3f | F1-Healthy (Maj): %.3f | Macro-F1: %.3f | FN: %d\n', ...
+            acc, f1_min, f1_maj, (f1_min+f1_maj)/2, fn);
+end
