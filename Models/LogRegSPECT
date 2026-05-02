@@ -1,50 +1,57 @@
-%% --- LOGISTIC REGRESSION: SPECT DATASET ---
-% 1. Load SPECT files
+%% --- REGULARIZED WEIGHTED LOGISTIC REGRESSION: SPECT ---
+% 1. Load and Normalize
 spect_train = readtable('/Users/dakotawang/Downloads/spect+heart (1) 2/SPECT.train', 'FileType', 'text');
 spect_test  = readtable('/Users/dakotawang/Downloads/spect+heart (1) 2/SPECT.test', 'FileType', 'text');
 
-% Column 1 is Diagnosis (0 or 1), Columns 2-23 are the binary features
-X_train = table2array(spect_train(:, 2:end)); 
-Y_train = table2array(spect_train(:, 1)); 
-X_test  = table2array(spect_test(:, 2:end));  
-Y_test  = table2array(spect_test(:, 1));
+X_train = table2array(spect_train(:, 2:end)); Y_train = table2array(spect_train(:, 1));
+X_test  = table2array(spect_test(:, 2:end));  Y_test  = table2array(spect_test(:, 1));
 
-% 2. Manual Normalization (Z-score)
-manual_z = @(data) (data - mean(data)) ./ (std(data) + 1e-6);
-X_train_s = manual_z(X_train);
-X_test_s = manual_z(X_test);
+X_train_s = (X_train - mean(X_train)) ./ (std(X_train) + 1e-6);
+X_test_s = (X_test - mean(X_test)) ./ (std(X_test) + 1e-6);
 
-% 3. Train Logistic Regression using Gradient Descent
-X_train_b = [ones(size(X_train_s,1),1) X_train_s]; % Add Bias
-[N, D] = size(X_train_b);
-w = zeros(D, 1);
-lr = 0.1;
-epochs = 2000;
+% 2. Model Parameters
+[m, n] = size(X_train_s);
+X_train_b = [ones(m, 1) X_train_s]; % Bias term
+theta = zeros(n + 1, 1);
+lr = 0.05;          % Slightly faster learning rate
+epochs = 3000;      
+penalty_weight = 6.0; % High penalty for missing sick patients (Y=1)
+lambda = 0.5;       % Regularization strength (The "Improvement" factor)
 
+% 3. Gradient Descent Loop with Regularization
 for i = 1:epochs
-    % Sigmoid function
-    h = 1 ./ (1 + exp(-(X_train_b * w)));
-    % Gradient update
-    w = w - (lr/N) * (X_train_b' * (h - Y_train));
+    z = X_train_b * theta;
+    h = 1 ./ (1 + exp(-z)); % Sigmoid
+    
+    % Apply weights to the error
+    error = h - Y_train;
+    weights = ones(m, 1);
+    weights(Y_train == 1) = penalty_weight;
+    
+    % Regularized Gradient: (X' * (W * Error) + lambda * theta) / m
+    % Note: We don't regularize the bias term (theta(1))
+    reg_term = (lambda / m) * theta;
+    reg_term(1) = 0; 
+    
+    gradient = ((X_train_b' * (weights .* error)) / m) + reg_term;
+    theta = theta - lr * gradient;
 end
 
 % 4. Test and Metrics
-X_test_b = [ones(size(X_test_s,1),1) X_test_s];
-% Calculate probabilities and convert to binary predictions (threshold = 0.5)
-probs = 1 ./ (1 + exp(-(X_test_b * w)));
-pred = probs >= 0.5;
+X_test_b = [ones(size(X_test_s, 1), 1) X_test_s];
+prob = 1 ./ (1 + exp(-(X_test_b * theta)));
+decision_threshold = 0.4; % Lower threshold to prioritize sensitivity
+pred = prob >= decision_threshold;
 
-% 5. Final Report Card
-tp = sum(pred == 1 & Y_test == 1); 
-tn = sum(pred == 0 & Y_test == 0);
-fp = sum(pred == 1 & Y_test == 0); 
-fn = sum(pred == 0 & Y_test == 1);
+tp = sum(pred == 1 & Y_test == 1); tn = sum(pred == 0 & Y_test == 0);
+fp = sum(pred == 1 & Y_test == 0); fn = sum(pred == 0 & Y_test == 1);
 
 acc = (tp + tn) / length(Y_test);
-f1_min = (2 * tp) / (2 * tp + fp + fn); 
-f1_maj = (2 * tn) / (2 * tn + fp + fn);
+f1_min = (2*tp) / (2*tp + fp + fn + 1e-6);
+f1_maj = (2*tn) / (2*tn + fp + fn + 1e-6);
 macro_f1 = (f1_min + f1_maj) / 2;
 
-fprintf('\n--- SPECT Logistic Regression Results ---\n');
-fprintf('Accuracy: %.3f | F1-Minority: %.3f | F1-Majority: %.3f | Macro-F1: %.3f | FN: %d\n', ...
-        acc, f1_min, f1_maj, macro_f1, fn);
+fprintf('\n--- FINAL IMPROVED LOGISTIC REGRESSION ---\n');
+fprintf('Accuracy: %.3f | Macro-F1: %.3f\n', acc, macro_f1);
+fprintf('F1-Minority (Sick): %.3f | F1-Majority (Healthy): %.3f\n', f1_min, f1_maj);
+fprintf('False Negatives: %d | False Positives: %d\n', fn, fp);
