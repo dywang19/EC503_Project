@@ -1,5 +1,5 @@
-%% --- LINEAR SVM: SPECT DATASET ---
-% 1. Load SPECT files (Same as above)
+%% --- WEIGHTED RBF KERNEL SVM: SPECT (NO TOOLBOX) ---
+% 1. Load Data
 spect_train = readtable('/Users/dakotawang/Downloads/spect+heart (1) 2/SPECT.train', 'FileType', 'text');
 spect_test  = readtable('/Users/dakotawang/Downloads/spect+heart (1) 2/SPECT.test', 'FileType', 'text');
 
@@ -10,24 +10,49 @@ X_test  = table2array(spect_test(:, 2:end));  Y_test  = table2array(spect_test(:
 X_train_s = (X_train - mean(X_train)) ./ (std(X_train) + 1e-6);
 X_test_s = (X_test - mean(X_test)) ./ (std(X_test) + 1e-6);
 
-% 3. "One-Shot" SVM Solver (Normal Equation)
-Y_svm = double(Y_train); Y_svm(Y_svm == 0) = -1;
-X_train_b = [ones(size(X_train_s,1),1) X_train_s];
+% 3. Manual RBF Function
+get_dist_sq = @(A, B) bsxfun(@plus, sum(A.^2, 2), sum(B.^2, 2)') - 2 * (A * B');
+sigma = 5.0; % You can tune this (1.0 to 10.0)
+rbf_kernel = @(A, B) exp(-get_dist_sq(A, B) / (2 * sigma^2));
 
-% Direct linear algebra solver for the SVM boundary
-w = (X_train_b' * X_train_b + 0.5 * eye(size(X_train_b,2))) \ (X_train_b' * Y_svm);
+% 4. Compute Kernel Matrix
+K_train = rbf_kernel(X_train_s, X_train_s);
+num_samples = size(X_train_s, 1);
 
-% 4. Test & Metrics
-X_test_b = [ones(size(X_test_s,1),1) X_test_s];
-pred = (X_test_b * w) >= 0;
+% 5. Training with Class Weights
+% We'll use your '4.0' weight here to keep it comparable
+penalty_weight = 4.0;
+alpha = zeros(num_samples, 1); 
+y_dual = double(Y_train); y_dual(y_dual == 0) = -1;
+lr = 0.005; % Slightly lower learning rate for stability
+lambda = 0.01; 
 
-% Final Report Card
+for epoch = 1:1500
+    preds = K_train * alpha;
+    % The "Weighted" Gradient: We multiply the error by our penalty
+    error_mask = (y_dual .* preds < 1);
+    weights = ones(num_samples, 1);
+    weights(Y_train == 1) = penalty_weight; % Heavier penalty for minority errors
+    
+    grad = lambda * K_train * alpha - K_train * (weights .* y_dual .* error_mask);
+    alpha = alpha - lr * grad;
+end
+
+% 6. Test with Threshold
+K_test = rbf_kernel(X_test_s, X_train_s);
+raw_preds = K_test * alpha;
+decision_threshold = 0.15; % Matching your previous successful run
+pred = raw_preds >= decision_threshold;
+
+% 7. Metrics
 tp = sum(pred == 1 & Y_test == 1); tn = sum(pred == 0 & Y_test == 0);
 fp = sum(pred == 1 & Y_test == 0); fn = sum(pred == 0 & Y_test == 1);
+
 acc = (tp + tn) / length(Y_test);
-f1_min = (2*tp) / (2*tp + fp + fn); f1_maj = (2*tn) / (2*tn + fp + fn);
+f1_min = (2*tp) / (2*tp + fp + fn + 1e-6); 
+f1_maj = (2*tn) / (2*tn + fp + fn + 1e-6);
 macro_f1 = (f1_min + f1_maj) / 2;
 
-fprintf('\n--- SPECT Linear SVM Results ---\n');
-fprintf('Accuracy: %.3f | F1-Minority: %.3f | F1-Majority: %.3f | Macro-F1: %.3f | FN: %d\n', ...
-        acc, f1_min, f1_maj, macro_f1, fn);
+fprintf('\n--- SPECT WEIGHTED KERNEL SVM (RBF) ---\n');
+fprintf('Accuracy: %.3f | F1-Minority (Sick): %.3f | F1-Majority (Healthy): %.3f\n', acc, f1_min, f1_maj);
+fprintf('Macro-F1: %.3f | FN: %d | FP: %d\n', macro_f1, fn, fp);
