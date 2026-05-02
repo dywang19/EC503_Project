@@ -1,7 +1,1 @@
-Python Requirements:
-sklearn
-imblearn
-xgboost
-pandas
-matplotlib
-shap
+Scripts can all be run independently depending on which model and dataset you wish to observe. Ensure that the data files downloaded from the repository are in the working directory when the scripts are run. All preprocessing steps are also done within the same scripts.
